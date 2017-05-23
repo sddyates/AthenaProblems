@@ -1,0 +1,74 @@
+<comment>
+problem   = mCAK
+configure = --prob=mCAK
+
+<job>
+problem_id = mCAK      # problem ID: basename of output filenames
+
+<output1>
+file_type  = hst        # History data dump
+dt         = 0.018       # time increment between outputs
+
+<output2>
+file_type  = hdf5       # Binary data dump
+variable   = prim       # variables to be output
+dt         = 0.0001     # time increment between outputs
+
+<time>
+cfl_number = 0.3        # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = 100000     # cycle limit
+tlim       = 0.16        # time limit
+
+<mesh>
+nx1        = 128         # Number of zones in X1-direction
+x1min      = -10.0      # minimum value of X1
+x1max      = 10.0       # maximum value of X1
+ix1_bc     = outflow    # inner-X1 boundary flag
+ox1_bc     = outflow    # outer-X1 boundary flag
+
+nx2        = 128         # Number of zones in X2-direction
+x2min      = -10.0      # minimum value of X2
+x2max      = 10.0       # maximum value of X2
+ix2_bc     = outflow    # inner-X2 boundary flag
+ox2_bc     = outflow    # outer-X2 boundary flag
+
+nx3        = 128          # Number of zones in X3-direction
+x3min      = -10.0      # minimum value of X3
+x3max      = 10.0       # maximum value of X3
+ix3_bc     = outflow    # inner-X3 boundary flag 
+ox3_bc     = outflow    # outer-X3 boundary flag
+
+refinement = static
+
+<refinement1>
+x1min = -1.5
+x1max =  1.5
+x2min = -1.5
+x2max =  1.5
+x3min = -1.5
+x3max =  1.5
+level = 1
+
+<meshblock>
+nx1     =    32
+nx2     =    32
+nx3     =    32
+
+
+<hydro>
+gamma      = 1.05 
+
+<problem>
+M_RATIO = 26.6  
+L_RATIO = 1.15e+5  
+B_CGS = 300.0  
+TT = 36.3e+3  
+MU = 1.09  
+AA = 0.6  
+b_law = 0.8  
+QQ = 700.0  
+aa_eff = 0.55  
+BB = 0.0  
+OMEGA = 0.5  
+Cs_P = 4.0  
+SHELL = 1.5
