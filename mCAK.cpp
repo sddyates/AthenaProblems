@@ -26,10 +26,26 @@ int RefinementCondition(MeshBlock *pmb);
 
 Real TwoDimensionalInterp(MeshBlock *pmb, int &i, int &j, int &k, Real &x, Real &y, 
                             Real &r, Real &ddr, const AthenaArray<Real> &prim);
+
 Real ThreeDimensionalInterp(MeshBlock *pmb, int &i, int &j, int &k, Real &x, Real &y, Real &z, 
                               Real &r, Real &ddr, const AthenaArray<Real> &prim);
-void MySource(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim, 
+
+void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim, 
               const AthenaArray<Real> &bcc, AthenaArray<Real> &cons);
+
+void AccelRotation(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim, 
+              const AthenaArray<Real> &bcc, AthenaArray<Real> &cons);
+
+void AccelGravity(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim, 
+              const AthenaArray<Real> &bcc, AthenaArray<Real> &cons);
+
+void AccelCAK(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim, 
+              const AthenaArray<Real> &bcc, AthenaArray<Real> &cons);
+
+void Cooling(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim, 
+              const AthenaArray<Real> &bcc, AthenaArray<Real> &cons);
+
+Real dveldr(Real *x, Real *fn);
 
 //========================================================================================
 //! \fn void Mesh::InitUserMeshData(ParameterInput *pin)
@@ -44,8 +60,11 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
   if(adaptive==true){
     EnrollUserRefinementCondition(RefinementCondition);
   }
-
-  EnrollUserExplicitSourceFunction(MySource);
+  EnrollUserExplicitSourceFunction(AccelGravity);
+  EnrollUserExplicitSourceFunction(AccelRotation);
+  EnrollUserExplicitSourceFunction(AccelCAK);
+  EnrollUserExplicitSourceFunction(Cooling);
+  EnrollUserExplicitSourceFunction(Interior);
 
   return;
 }
@@ -186,15 +205,17 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
 //! \fn void MeshBlock::UserWorkInLoop(void)
 //  \brief Function called once every time step for user-defined work.
 //========================================================================================
-
 void MeshBlock::UserWorkInLoop(void)
 {
   // do nothing
   return;
 }
 
-
-void MySource(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim,
+//========================================================================================
+//! \fn void MeshBlock::Interior()
+//  \brief function for holding the stellar interior constant.
+//========================================================================================
+void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim,
              const AthenaArray<Real> &bcc, AthenaArray<Real> &cons)
 {
 
@@ -281,11 +302,6 @@ void MySource(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
   Real vy = 0.0;
   Real vz = 0.0;
 
-  Real vrI[2];
-  Real ddr = 0.0;
-  Real gL = 0.0;
-
-  int p;
 
   for (int k=pmb->ks; k<=pmb->ke; ++k) {
   for (int j=pmb->js; j<=pmb->je; ++j) {
@@ -307,43 +323,258 @@ void MySource(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
 
     // Stellar interior.
     if (r < 0.5) {
+
       rho = M_dot/(4.0*pi*(cs/Cs_p));
       prs = cs*cs*rho/gmma;
+
       cons(IDN,k,j,i) = rho;
       cons(IM1,k,j,i) = 0.0;
       cons(IM2,k,j,i) = 0.0;
       cons(IM3,k,j,i) = 0.0;
       cons(IEN,k,j,i) = prs/(rho*gm1);
+
     } else if (r >= 0.5 && r < 1.0) {
+
       rho = M_dot/(4.0*pi*(cs/Cs_p));
       prs = cs*cs*rho/gmma;
+
       cons(IDN,k,j,i) = rho;
       cons(IM1,k,j,i) = 0.0;
       cons(IM2,k,j,i) = 0.0;
       cons(IM3,k,j,i) = 0.0;
       cons(IEN,k,j,i) = prs/(rho*gm1);
+
     } else if (r >= 1.0 && r < shell) {
+
       rho = M_dot/(4.0*pi*vv*r*r);
       prs = cs*cs*rho/gmma;
+
       cons(IDN,k,j,i) = rho;
       cons(IM1,k,j,i) = rho*vx;
       cons(IM2,k,j,i) = rho*vy;
       cons(IM3,k,j,i) = rho*vz;
       cons(IEN,k,j,i) = prs/(rho*gm1) + 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz));
-    } else if (r >= shell) {
+
+    }
+
+  }}}
+  return;
+}
+
+//========================================================================================
+//! \fn void MeshBlock::AccelGravity()
+//  \brief Used to calculate acceleration due to gravity.
+//========================================================================================
+void AccelGravity(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim,
+             const AthenaArray<Real> &bcc, AthenaArray<Real> &cons)
+{
+
+  Real Big_G = 6.67259e-8;  //[cm3 g-1 s-2]
+  Real Msun = 1.989e+33;    //[g]
+  Real Rsun = 6.955e+10;    //[cm]
+
+  Real Mratio = 26.6;
+  Real Lratio = 1.15e+5;
+  Real Rratio = 9.0;
+
+  Real UNIT_DENSITY = 1.0e-12;
+  Real UNIT_LENGTH = Rratio*Rsun;
+  Real UNIT_VELOCITY = 1.0e+5;
+  Real UNIT_TIME = UNIT_LENGTH/UNIT_VELOCITY;
+  Real UNIT_MASS = UNIT_DENSITY*pow(UNIT_LENGTH,3);
+  Real UNIT_G = Big_G*UNIT_DENSITY*SQR(UNIT_TIME);
+
+  Real x = 0.0;
+  Real y = 0.0;
+  Real z = 0.0;
+
+  Real M_star = Mratio*Msun/UNIT_MASS;
+  Real Edd = (2.6e-5*(Lratio)*(1.0/Mratio));
+  Real r = 0.0, gs = 0.0;
+
+  for (int k=pmb->ks; k<=pmb->ke; ++k) {
+  for (int j=pmb->js; j<=pmb->je; ++j) {
+  for (int i=pmb->is; i<=pmb->ie; ++i) {
+
+    x = pmb->pcoord->x1v(i);
+		y = pmb->pcoord->x2v(j);
+		z = pmb->pcoord->x3v(k);
+
+		r = sqrt(SQR(x) + SQR(y) + SQR(z));
+
+    gs = -UNIT_G*(M_star - Edd)/r/r;;
+
+    cons(IM1,k,j,i) += prim(IDN,k,j,i)*gs*x/r*dt;
+    cons(IM2,k,j,i) += prim(IDN,k,j,i)*gs*y/r*dt;
+    cons(IM3,k,j,i) += prim(IDN,k,j,i)*gs*z/r*dt;
+
+  }}}
+  return;
+}
+
+//========================================================================================
+//! \fn void MeshBlock::AccelRotation()
+//  \brief used to calculate the acceleration due to the rotating frame of the star.
+//========================================================================================
+
+void AccelRotation(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim,
+             const AthenaArray<Real> &bcc, AthenaArray<Real> &cons)
+{
+
+  Real Big_G = 6.67259e-8;  //[cm3 g-1 s-2]
+  Real Msun = 1.989e+33;    //[g]
+  Real Rsun = 6.955e+10;    //[cm]
+
+  Real Mratio = 26.6;
+  Real omega = 0.05; 
+  Real Rratio = 9.0;
+
+  Real UNIT_DENSITY = 1.0e-12;
+  Real UNIT_LENGTH = Rratio*Rsun;
+  Real UNIT_VELOCITY = 1.0e+5;
+  Real UNIT_MASS = UNIT_DENSITY*pow(UNIT_LENGTH,3);
+  Real UNIT_TIME = UNIT_LENGTH/UNIT_VELOCITY;
+  Real UNIT_G = Big_G*UNIT_DENSITY*SQR(UNIT_TIME);
+  Real M_star = Mratio*Msun/UNIT_MASS;
+  Real Rs = Rratio*Rsun/UNIT_LENGTH;
+  Real omega_fr = pow(omega,2)*(8.0*UNIT_G*M_star/(27.0*Rs));
+
+  Real r, theta, phi;
+  Real v_r, v_theta, v_phi;
+  Real F[3];
+
+  Real x, y, z;
+  Real vx, vy, vz;
+  Real x_ce, y_ce, z_ce;
+
+  for (int k=pmb->ks; k<=pmb->ke; ++k) {
+  for (int j=pmb->js; j<=pmb->je; ++j) {
+  for (int i=pmb->is; i<=pmb->ie; ++i) {
+
+    x = pmb->pcoord->x1v(i);
+    y = pmb->pcoord->x2v(j);
+    z = pmb->pcoord->x3v(k); 
+    vx = prim(IVX,k,j,i);
+    vy = prim(IVY,k,j,i);
+    vz = prim(IVZ,k,j,i);
+
+    // calculate coriolis and centrifugal accelerations.
+    F[0] = omega_fr*omega_fr*x + 2.0*omega_fr*vy;
+    F[1] = omega_fr*omega_fr*y - 2.0*omega_fr*vx;
+    F[2] = 0.0;
+
+    cons(IM1,k,j,i) += prim(IDN,k,j,i)*F[0]*dt;
+    cons(IM2,k,j,i) += prim(IDN,k,j,i)*F[1]*dt;
+    cons(IM3,k,j,i) += prim(IDN,k,j,i)*F[2]*dt;
+
+  }}}
+  return;
+
+}
+
+//========================================================================================
+//! \fn void MeshBlock::AccelCAK()
+//  \brief Used to calculate the accelration due to line driving accourding to mCAK
+//         theory. This can be improved by including the non-radial acceleration 
+//         i.e. Pitard 2009.
+//========================================================================================
+
+void AccelCAK(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim,
+             const AthenaArray<Real> &bcc, AthenaArray<Real> &cons)
+{
+
+  Real gmma  = pmb->peos->GetGamma();
+  Real gm1  = gmma - 1;
+
+  Real pi = 3.1415926536;
+  Real kb = 1.38064852e-16; //[erg K-1]
+  Real mp = 1.67262171e-24; //[g]
+  Real Big_G = 6.67259e-8;  //[cm3 g-1 s-2]
+  Real Msun = 1.989e+33;    //[g]
+  Real Rsun = 6.955e+10;    //[cm]
+  Real Lsun = 3.846e+33;    //[erg s-1]
+  Real c = 3.0e+5;
+
+  Real Cs_p = 4.0;
+  Real Mratio = 26.6;
+  Real Lratio = 1.15e+5;
+  Real Bcgs = 300.0;
+  Real T = 36.3e+3;
+  Real mu = 1.09;
+  Real a = 0.6;
+  Real b = 0.8;
+  Real Q = 700.0;
+  Real a_eff = 0.55;
+  Real beta = 0.0;
+  Real omega = 0.05; 
+  Real Rratio = 9.0;
+  Real shell = 1.5; 
+
+  Real UNIT_DENSITY = 1.0e-12;
+  Real UNIT_LENGTH = Rratio*6.955e+10;
+  Real UNIT_VELOCITY = 1.0e+5;
+  Real UNIT_TIME = UNIT_LENGTH/UNIT_VELOCITY;
+  Real UNIT_MASS = UNIT_DENSITY*pow(UNIT_LENGTH,3);
+  Real UNIT_G = Big_G*UNIT_DENSITY*SQR(UNIT_TIME);
+  Real UNIT_L = pow(UNIT_TIME,-3)*(UNIT_DENSITY*pow(UNIT_LENGTH,5));
+  Real UNIT_PRESSURE = 1.0e-02;
+  Real UNIT_kB = (kb*pow(UNIT_TIME,2))/(UNIT_DENSITY*pow(UNIT_LENGTH,5));
+  Real UNIT_B = sqrt((4.0*pi*UNIT_DENSITY*UNIT_VELOCITY*UNIT_VELOCITY));
+
+  Real M_star = Mratio*Msun/UNIT_MASS;
+  Real Rs = Rratio*Rsun/UNIT_LENGTH;
+  Real Edd = (2.6e-5*(Lratio)*(1.0/Mratio));
+  Real L = (Lratio*Lsun/UNIT_L);
+  Real M_dot = pow(1.0+a_eff,-(1.0/a_eff)) * a_eff * pow(1.0-a_eff,-1)*
+             (L/(c*c))*pow(((Q*Edd)*pow(1.0-Edd,-1)),pow(a_eff,-1)-1.0);
+  Real cs = sqrt(2.0*kb*T/mp)/UNIT_VELOCITY;
+  Real Bq = Bcgs/UNIT_B;
+  Real v_esc = sqrt(2.0*UNIT_G*M_star*(1.0-Edd));
+  Real v_inf = v_esc*sqrt((a/(1.0-a)));
+  Real ke = ((4.0*pi*UNIT_G*M_star*c*Edd)/L); 
+  Real A = ((1.0/(1.0-a))*((ke*L*Q)/(4.0*pi*c)));;
+
+  Real x = 0.0;
+  Real y = 0.0;
+  Real z = 0.0;
+
+  Real r;
+  Real dvdr, ddr, gL;
+  Real nu2_c, B, sigma, f;
+  Real v_r, Temp;
+
+  Real vrI[2];
+
+  int p;
+
+  for (int k=pmb->ks; k<=pmb->ke; ++k) {
+  for (int j=pmb->js; j<=pmb->je; ++j) {
+  for (int i=pmb->is; i<=pmb->ie; ++i) {
+
+    x = pmb->pcoord->x1v(i);
+    y = pmb->pcoord->x2v(j);
+    z = pmb->pcoord->x3v(k);
+
+    r = sqrt(SQR(x) + SQR(y) + SQR(z));
+
+    if (r >= shell) {
 
       for (p = 0; p < 2; p++) {
+
         Real dx = pmb->pcoord->x1v(i+1) - x;
         Real dy = pmb->pcoord->x2v(j+1) - y;
         Real dz = pmb->pcoord->x3v(k+1) - z;
         Real dr = sqrt(SQR(dx) + SQR(dy) + SQR(dz));
+
         if (p == 0) {
           ddr = -0.9*dr;
         } else {
           ddr = 0.9*dr;
         }
+
         //vrI[p] = TwoDimensionalInterp(pmb, i, j, k, x, y, r, ddr, prim);
         vrI[p] = ThreeDimensionalInterp(pmb, i, j, k, x, y, z, r, ddr, prim);
+
       }
 
       Real vr    = prim(IVX,k,j,i)*x/r + prim(IVY,k,j,i)*y/r + prim(IVZ,k,j,i)*z/r;
@@ -354,19 +585,16 @@ void MySource(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
       Real f     = ((pow(1.0+sigma,1.0+a)-pow(1.0+sigma*nu2_c,1.0+a))/((1.0+a)*(1.0-nu2_c)*sigma*pow(1.0+sigma,a)));
       gL = (f*A*pow(r,-2)*pow(dvdr/B,a)); 
 
-      // Set acceleration from gravity, rotation and mCAK.
-      Real gs = -UNIT_G*(M_star - Edd)/r/r;
-      Real Fin_x = 0.0;//omega_fr*omega_fr*x + 2.0*omega_fr*prim(IVY,k,j,i);
-      Real Fin_y = 0.0;//omega_fr*omega_fr*y - 2.0*omega_fr*prim(IVX,k,j,i);
+      Temp = prim(IPR,k,j,i)*mu*(mp/UNIT_MASS)/(prim(IDN,k,j,i)*UNIT_kB);
+      if (Temp < 1.0e+6){
+        gL = (f*A*pow(r,-2)*pow(dvdr/B,a));
+      } else {
+        gL = 0.0;
+      }
 
-      Real g_x = Fin_x + gs*x/r + gL*x/r;
-      Real g_y = Fin_y + gs*y/r + gL*y/r;
-      Real g_z = gs*z/r + gL*z/r;
-
-      cons(IM1,k,j,i) += prim(IDN,k,j,i)*g_x*dt;
-      cons(IM2,k,j,i) += prim(IDN,k,j,i)*g_y*dt;
-      cons(IM3,k,j,i) += prim(IDN,k,j,i)*g_z*dt;
-
+      cons(IM1,k,j,i) += prim(IDN,k,j,i)*gL*x/r*dt;
+      cons(IM2,k,j,i) += prim(IDN,k,j,i)*gL*y/r*dt;
+      cons(IM3,k,j,i) += prim(IDN,k,j,i)*gL*z/r*dt;
 /*
       if (cons(IDN,k,j,i) < 1.0e-10 || prim(IDN,k,j,i) < 1.0e-10) {
         std::cout << "vrI[0] =" << vrI[0] << "\n";
@@ -379,14 +607,40 @@ void MySource(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
         std::cout << "gL =" << gL << "\n";
       }
 */
-
     }
 
   }}}
   return;
 }
 
+//========================================================================================
+//! \fn void MeshBlock::Cooling(MeshBlock *pmb, const Real time, const Real dt, 
+//                      const AthenaArray<Real> &prim, const AthenaArray<Real> &bcc, 
+//                      AthenaArray<Real> &cons)
+//  \brief Cooling source term. This is a simple cooling function that is simply a 
+//         place holder for a proper one to be coded up later.
+//========================================================================================
+void Cooling(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<Real> &prim,
+             const AthenaArray<Real> &bcc, AthenaArray<Real> &cons)
+{
+  Real g = pmb->peos->GetGamma();
+  Real tau = 0.01;
+  for (int k=pmb->ks; k<=pmb->ke; ++k) {
+    for (int j=pmb->js; j<=pmb->je; ++j) {
+      for (int i=pmb->is; i<=pmb->ie; ++i) {
+        Real temp = (g-1.0)*prim(IEN,k,j,i)/prim(IDN,k,j,i);
+        cons(IEN,k,j,i) -= dt*prim(IDN,k,j,i)*(temp - 10.0)/tau/(g-1.0);
+      }
+    }
+  }
+  return;
+}
 
+//========================================================================================
+//! \fn void MeshBlock::RefinementCondition()
+//  \brief Calculate the quantity which determins if the MeshBlock is refined or 
+//         de-refined.
+//========================================================================================
 int RefinementCondition(MeshBlock *pmb)
 {
   AthenaArray<Real> &w = pmb->phydro->w;
@@ -409,6 +663,68 @@ int RefinementCondition(MeshBlock *pmb)
   return 0;
 } 
 
+//========================================================================================
+//! \fn void MeshBlock::dveldr(Real *x, Real *fn)
+//  \brief Function for calculating the Forberg's algorithm:
+//         http://faculty.washington.edu/rjl/fdmbook/matlab/fdcoeffF.m
+//         This is a matlab script but has been translated to c++.
+//========================================================================================
+Real dveldr(Real *x, Real *fn)
+{
+
+  int n = 5, m = 1, mn = 0;
+  int i, j, s, i1, j1, s1;
+
+  Real c0, c1, c2, c3, c4;
+  Real xbar = x[2];
+  Real C[n-1][m+1];
+  Real dvdr = 0.0;
+
+  for (i=0; i<n; i++){
+    for (j=0; j<m+1; j++){
+      C[i][j] = 0.0;
+  }}
+
+  C[0][0] = 1.0;
+  c0 = 1;
+  c3 = x[0] - xbar;
+
+  for (i=0; i<n; i++){
+    i1 = i+1;
+    mn = std::min(i,m);
+    c1 = 1.0;
+    c4 = c3;
+    c3 = x[i1] - xbar;
+    for (j=0; j<=i-1; j++){
+      j1 = j+1;
+      c2 = x[i1] - x[j1];
+      c1 = c1*c2;
+      if (j==i-1) {
+        for (s=mn; s>=1; s--){
+          s1 = s+1;
+          C[i1][s1] = c0*((s+1)*C[i1-1][s1-1] - c4*C[i1-1][s1])/c1;
+        }
+        C[i1][0] = -c0*c4*C[i1-1][0]/c1;
+      }
+      for (s=mn; s>=0; s--){
+        s1 = s+1;
+        C[j1][s1] = (c3*C[j1][s1] - s*C[j1][s1-1])/c2;
+      }
+      C[j1][0] = c3*C[j1][0]/c2;
+    }
+    c0 = c1;
+  }
+  for (i=0; i<n; i++){
+    dvdr = C[i][m+1]*fn[i];
+  }
+  return dvdr;
+
+}
+
+//========================================================================================
+//! \fn void MeshBlock::TwoDimensionalInterp(Real *x, Real *fn)
+//  \brief Calculate the velocity at a given point from the NN points (2D).
+//========================================================================================
 Real TwoDimensionalInterp(MeshBlock *pmb, int &i, int &j, int &k, Real &x, Real &y, 
                             Real &r, Real &ddr, const AthenaArray<Real> &prim)
 {
@@ -529,7 +845,10 @@ Real TwoDimensionalInterp(MeshBlock *pmb, int &i, int &j, int &k, Real &x, Real 
 
 }
 
-
+//========================================================================================
+//! \fn void MeshBlock::ThreeDimensionalInterp(Real *x, Real *fn)
+//  \brief Calculate the velocity at a given point from the NN points (3D).
+//========================================================================================
 Real ThreeDimensionalInterp(MeshBlock *pmb, int &i, int &j, int &k, Real &x, Real &y, 
                               Real &z, Real &r, Real &ddr, const AthenaArray<Real> &prim)
 {
