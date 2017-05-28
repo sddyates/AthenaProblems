@@ -47,6 +47,8 @@ void Cooling(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<R
 
 Real dveldr(Real *x, Real *fn);
 
+void SphToCar(Real x, Real y, Real z, Real Bq, Real Rs, Real *A);
+
 //========================================================================================
 //! \fn void Mesh::InitUserMeshData(ParameterInput *pin)
 //  \brief Function to initialize problem-specific data in Mesh class.  Can also be used
@@ -141,6 +143,15 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
   Real vy = 0.0;
   Real vz = 0.0;
 
+  AthenaArray<Real> a1,a2,a3;
+  int nx1 = (ie-is)+1 + 2*(NGHOST);
+  int nx2 = (je-js)+1 + 2*(NGHOST);
+  int nx3 = (ke-ks)+1 + 2*(NGHOST);
+  a1.NewAthenaArray(nx3,nx2,nx1);
+  a2.NewAthenaArray(nx3,nx2,nx1);
+  a3.NewAthenaArray(nx3,nx2,nx1);
+  Real Ap[3];
+
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie; i++) {
@@ -171,6 +182,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
       phydro->u(IM3,k,j,i) = 0.0;
       phydro->u(IEN,k,j,i) = prs/(rho*gm1);
 
+      if (MAGNETIC_FIELDS_ENABLED){ 
+        SphToCar(x, y, z, Bq, Rs, Ap);
+        a1(k,j,i) = Ap[0];
+        a2(k,j,i) = Ap[1];
+        a3(k,j,i) = Ap[2];
+      }
+
     } else if (r >= 0.5 && r < 1.0) {
 
       rho = M_dot/(4.0*pi*(cs/Cs_p));
@@ -181,6 +199,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
       phydro->u(IM2,k,j,i) = 0.0;
       phydro->u(IM3,k,j,i) = 0.0;
       phydro->u(IEN,k,j,i) = prs/(rho*gm1);
+
+      if (MAGNETIC_FIELDS_ENABLED){ 
+        SphToCar(x, y, z, Bq, Rs, Ap);
+        a1(k,j,i) = Ap[0];
+        a2(k,j,i) = Ap[1];
+        a3(k,j,i) = Ap[2];
+      }
 
     } else if (r >= 1.0) {
 
@@ -193,21 +218,50 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
       phydro->u(IM3,k,j,i) = rho*vz;
       phydro->u(IEN,k,j,i) = prs/(rho*gm1) + 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz));
 
+      if (MAGNETIC_FIELDS_ENABLED){ 
+        SphToCar(x, y, z, Bq, Rs, Ap);
+        a1(k,j,i) = Ap[0];
+        a2(k,j,i) = Ap[1];
+        a3(k,j,i) = Ap[2];
+      }
+
     }
 
   }}}
 
+  // initialize interface B
+  for (int k=ks; k<=ke; k++) {
+  for (int j=js; j<=je; j++) {
+  for (int i=is; i<=ie+1; i++) {
+    pfield->b.x1f(k,j,i) = (a3(k,j+1,i) - a3(k,j,i))/pcoord->dx2f(j) -
+                        (a2(k+1,j,i) - a2(k,j,i))/pcoord->dx3f(k);
+  }}}
+  for (int k=ks; k<=ke; k++) {
+  for (int j=js; j<=je+1; j++) {
+  for (int i=is; i<=ie; i++) {
+    pfield->b.x2f(k,j,i) = (a1(k+1,j,i) - a1(k,j,i))/pcoord->dx3f(k) -
+                        (a3(k,j,i+1) - a3(k,j,i))/pcoord->dx1f(i);
+  }}}
+  for (int k=ks; k<=ke+1; k++) {
+  for (int j=js; j<=je; j++) {
+  for (int i=is; i<=ie; i++) {
+    pfield->b.x3f(k,j,i) = (a2(k,j,i+1) - a2(k,j,i))/pcoord->dx1f(i) -
+                        (a1(k,j+1,i) - a1(k,j,i))/pcoord->dx2f(j);
+  }}}
 
-  return;
-}
+  // initialize total energy
+  if (NON_BAROTROPIC_EOS) {
+    for (int k=ks; k<=ke; k++) {
+    for (int j=js; j<=je; j++) {
+      for (int i=is; i<=ie; i++) {
+        phydro->u(IEN,k,j,i) +=
+          0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
+               SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
+               SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));
+      }
+    }}
+  }
 
-//========================================================================================
-//! \fn void MeshBlock::UserWorkInLoop(void)
-//  \brief Function called once every time step for user-defined work.
-//========================================================================================
-void MeshBlock::UserWorkInLoop(void)
-{
-  // do nothing
   return;
 }
 
@@ -302,6 +356,14 @@ void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
   Real vy = 0.0;
   Real vz = 0.0;
 
+  AthenaArray<Real> a1,a2,a3;
+  int nx1 = (pmb->ie - pmb->is)+1 + 2*(NGHOST);
+  int nx2 = (pmb->je - pmb->js)+1 + 2*(NGHOST);
+  int nx3 = (pmb->ke - pmb->ks)+1 + 2*(NGHOST);
+  a1.NewAthenaArray(nx3,nx2,nx1);
+  a2.NewAthenaArray(nx3,nx2,nx1);
+  a3.NewAthenaArray(nx3,nx2,nx1);
+  Real Ap[3];
 
   for (int k=pmb->ks; k<=pmb->ke; ++k) {
   for (int j=pmb->js; j<=pmb->je; ++j) {
@@ -333,6 +395,13 @@ void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
       cons(IM3,k,j,i) = 0.0;
       cons(IEN,k,j,i) = prs/(rho*gm1);
 
+      if (MAGNETIC_FIELDS_ENABLED){ 
+        SphToCar(x, y, z, Bq, Rs, Ap);
+        a1(k,j,i) = Ap[0];
+        a2(k,j,i) = Ap[1];
+        a3(k,j,i) = Ap[2];
+      }
+
     } else if (r >= 0.5 && r < 1.0) {
 
       rho = M_dot/(4.0*pi*(cs/Cs_p));
@@ -344,6 +413,13 @@ void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
       cons(IM3,k,j,i) = 0.0;
       cons(IEN,k,j,i) = prs/(rho*gm1);
 
+      if (MAGNETIC_FIELDS_ENABLED){ 
+        SphToCar(x, y, z, Bq, Rs, Ap);
+        a1(k,j,i) = Ap[0];
+        a2(k,j,i) = Ap[1];
+        a3(k,j,i) = Ap[2];
+      }
+
     } else if (r >= 1.0 && r < shell) {
 
       rho = M_dot/(4.0*pi*vv*r*r);
@@ -353,13 +429,106 @@ void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
       cons(IM1,k,j,i) = rho*vx;
       cons(IM2,k,j,i) = rho*vy;
       cons(IM3,k,j,i) = rho*vz;
-      cons(IEN,k,j,i) = prs/(rho*gm1) + 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz));
+/*      cons(IEN,k,j,i) = prs/(rho*gm1) + 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz)) + 
+                        0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
+                        SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
+                        SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));*/
+
+      if (MAGNETIC_FIELDS_ENABLED){ 
+        SphToCar(x, y, z, Bq, Rs, Ap);
+        a1(k,j,i) = Ap[0];
+        a2(k,j,i) = Ap[1];
+        a3(k,j,i) = Ap[2];
+      }
 
     }
 
   }}}
+/*
+  // initialize interface B
+  for (int k=ks; k<=ke; k++) {
+  for (int j=js; j<=je; j++) {
+  for (int i=is; i<=ie+1; i++) {
+    x = pmb->pcoord->x1v(i);
+    y = pmb->pcoord->x2v(j);
+    z = pmb->pcoord->x3v(k);
+    r = sqrt(SQR(x) + SQR(y) + SQR(z));
+    if (r < 1.0){ 
+      pfield->b.x1f(k,j,i) = (a3(k,j+1,i) - a3(k,j,i))/pcoord->dx2f(j) -
+                          (a2(k+1,j,i) - a2(k,j,i))/pcoord->dx3f(k);
+    }
+  }}}
+  for (int k=ks; k<=ke; k++) {
+  for (int j=js; j<=je+1; j++) {
+  for (int i=is; i<=ie; i++) {
+    x = pmb->pcoord->x1v(i);
+    y = pmb->pcoord->x2v(j);
+    z = pmb->pcoord->x3v(k);
+    r = sqrt(SQR(x) + SQR(y) + SQR(z));
+    if (r < 1.0){ 
+      pfield->b.x2f(k,j,i) = (a1(k+1,j,i) - a1(k,j,i))/pcoord->dx3f(k) -
+                          (a3(k,j,i+1) - a3(k,j,i))/pcoord->dx1f(i);
+    }
+  }}}
+  for (int k=ks; k<=ke+1; k++) {
+  for (int j=js; j<=je; j++) {
+  for (int i=is; i<=ie; i++) {
+    x = pmb->pcoord->x1v(i);
+    y = pmb->pcoord->x2v(j);
+    z = pmb->pcoord->x3v(k);
+    r = sqrt(SQR(x) + SQR(y) + SQR(z));
+      if (r < 1.0){ 
+    pfield->b.x3f(k,j,i) = (a2(k,j,i+1) - a2(k,j,i))/pcoord->dx1f(i) -
+                        (a1(k,j+1,i) - a1(k,j,i))/pcoord->dx2f(j);
+  }}}
+
+  // initialize total energy
+  if (NON_BAROTROPIC_EOS) {
+    for (int k=ks; k<=ke; k++) {
+    for (int j=js; j<=je; j++) {
+    for (int i=is; i<=ie; i++) {
+      x = pmb->pcoord->x1v(i);
+      y = pmb->pcoord->x2v(j);
+      z = pmb->pcoord->x3v(k);
+      r = sqrt(SQR(x) + SQR(y) + SQR(z));
+      if (r < 1.0){ 
+        phydro->u(IEN,k,j,i) =
+          0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
+               SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
+               SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));
+      }
+    }}}
+  }
+*/
   return;
 }
+
+//========================================================================================
+//! \fn void MeshBlock::SphToCar()
+//  \brief Used to calculate the vector potential in Cartesian coordinates from 
+//         spherical coordinates.
+//========================================================================================
+void SphToCar(const Real x, const Real y, const Real z, const Real Bq, const Real Rs, Real *Ap)
+{
+
+  // transform to spherical coordinates.
+  Real r = sqrt(SQR(x) + SQR(y) + SQR(z));
+  Real theta = acos(z/r);  
+  Real phi = atan2(y,x);
+
+  // get spherical vector potential components.
+  Real ar = 0.0;
+  Real atheta = 0.0;
+  Real aphi = Bq*Rs*pow(r,-2)*sin(theta);
+
+  // transform vector potential back to Cartesian coordinates.
+  Ap[0] = ar*sin(theta)*cos(phi) + atheta*cos(theta)*cos(phi) - aphi*sin(phi);
+  Ap[1] = ar*sin(theta)*sin(phi) + atheta*cos(theta)*sin(phi) + aphi*cos(phi);
+  Ap[2] = ar*cos(theta) - atheta*sin(theta);
+
+  return; 
+}
+
 
 //========================================================================================
 //! \fn void MeshBlock::AccelGravity()

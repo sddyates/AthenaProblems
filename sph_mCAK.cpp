@@ -347,7 +347,7 @@ void AccelRotation(MeshBlock *pmb, const Real time, const Real dt, const AthenaA
     y_ce = omega_fr*omega_fr*y - 2.0*omega_fr*vx;
     z_ce = 0.0;
 
-    // transform accelerations beck to spherical polar coordinates.
+    // transform accelerations back to spherical polar coordinates.
     F[0] = x_ce*sin(theta)*cos(phi) + y_ce*sin(theta)*sin(phi) + z_ce*cos(theta);
     F[1] = x_ce*cos(theta)*cos(phi) + y_ce*cos(theta)*sin(phi) - z_ce*sin(theta);
     F[2] = -x_ce*sin(phi) + y_ce*cos(phi);
