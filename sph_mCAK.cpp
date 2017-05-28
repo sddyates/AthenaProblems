@@ -163,7 +163,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     area.NewAthenaArray(nx1);
     len.NewAthenaArray(nx1);
     len_p1.NewAthenaArray(nx1);
-
+/*
     // for 1,2,3-D
     for (int k=ks; k<=ke; ++k) {
       // reset loop limits for polar boundary
@@ -225,6 +225,27 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
             pfield->b.x2f(k,j,i) += (len_p1(i)*a1(k+1,j,i) - len(i)*a1(k,j,i))/area(i);
       }}}
     }
+*/
+    // initialize interface B
+    for (int k=ks; k<=ke; k++) {
+    for (int j=js; j<=je; j++) {
+    for (int i=is; i<=ie+1; i++) {
+      pfield->b.x1f(k,j,i) = (a3(k,j+1,i) - a3(k,j,i))/pcoord->dx2f(j) -
+                          (a2(k+1,j,i) - a2(k,j,i))/pcoord->dx3f(k);
+    }}}
+    for (int k=ks; k<=ke; k++) {
+    for (int j=js; j<=je+1; j++) {
+    for (int i=is; i<=ie; i++) {
+      pfield->b.x2f(k,j,i) = (a1(k+1,j,i) - a1(k,j,i))/pcoord->dx3f(k) -
+                          (a3(k,j,i+1) - a3(k,j,i))/pcoord->dx1f(i);
+    }}}
+    for (int k=ks; k<=ke+1; k++) {
+    for (int j=js; j<=je; j++) {
+    for (int i=is; i<=ie; i++) {
+      pfield->b.x3f(k,j,i) = (a2(k,j,i+1) - a2(k,j,i))/pcoord->dx1f(i) -
+                          (a1(k,j+1,i) - a1(k,j,i))/pcoord->dx2f(j);
+    }}}
+
     a1.DeleteAthenaArray();
     a2.DeleteAthenaArray();
     a3.DeleteAthenaArray();

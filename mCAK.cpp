@@ -170,6 +170,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     vy = vv*y/r;
     vz = vv*z/r;
 
+
     // Stellar interior.
     if (r < 0.5) {
 
@@ -188,6 +189,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
         a2(k,j,i) = Ap[1];
         a3(k,j,i) = Ap[2];
       }
+      //std::cout << "Ap[2] = " << Ap[2] << "\n";
 
     } else if (r >= 0.5 && r < 1.0) {
 
@@ -206,6 +208,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
         a2(k,j,i) = Ap[1];
         a3(k,j,i) = Ap[2];
       }
+      //std::cout << "Ap[2] = " << Ap[2] << "\n";
 
     } else if (r >= 1.0) {
 
@@ -224,6 +227,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
         a2(k,j,i) = Ap[1];
         a3(k,j,i) = Ap[2];
       }
+      std::cout << "Ap[0] = " << Ap[0] << "\n";
+      std::cout << "Ap[1] = " << Ap[1] << "\n";
+      std::cout << "Ap[2] = " << Ap[2] << "\n";
 
     }
 
@@ -233,6 +239,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie+1; i++) {
+/*    std::cout << "kji = " << i << j << k << "\n";
+    std::cout << "a1(k,j,i) = " << a1(k,j,i) << "\n";
+    std::cout << "a2(k,j,i) = " << a2(k,j,i) << "\n";
+    std::cout << "a3(k,j,i) = " << a3(k,j,i) << "\n";
+    std::cout << "pcoord->dx2f(j) = " << pcoord->dx2f(j) << "\n";
+    std::cout << "pcoord->dx3f(k) = " << pcoord->dx3f(k) << "\n";
+    std::cout << "pfield->b.x1f(k,j,i) = " << pfield->b.x1f(k,j,i) << "\n";*/
     pfield->b.x1f(k,j,i) = (a3(k,j+1,i) - a3(k,j,i))/pcoord->dx2f(j) -
                         (a2(k+1,j,i) - a2(k,j,i))/pcoord->dx3f(k);
   }}}
@@ -254,7 +267,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     for (int k=ks; k<=ke; k++) {
     for (int j=js; j<=je; j++) {
       for (int i=is; i<=ie; i++) {
-        phydro->u(IEN,k,j,i) +=
+        std::cout << "pfield->b.x1f(k,j,i) = " << pfield->b.x1f(k,j,i) << "\n";
+        std::cout << "pfield->b.x2f(k,j,i) = " << pfield->b.x2f(k,j,i) << "\n";
+        std::cout << "pfield->b.x3f(k,j,i) = " << pfield->b.x3f(k,j,i) << "\n";
+          phydro->u(IEN,k,j,i) +=
           0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
                SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
                SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));
@@ -429,7 +445,7 @@ void Interior(MeshBlock *pmb, const Real time, const Real dt, const AthenaArray<
       cons(IM1,k,j,i) = rho*vx;
       cons(IM2,k,j,i) = rho*vy;
       cons(IM3,k,j,i) = rho*vz;
-/*      cons(IEN,k,j,i) = prs/(rho*gm1) + 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz)) + 
+      cons(IEN,k,j,i) = prs/(rho*gm1) + 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz));/* + 
                         0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
                         SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
                         SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));*/
@@ -517,14 +533,25 @@ void SphToCar(const Real x, const Real y, const Real z, const Real Bq, const Rea
   Real phi = atan2(y,x);
 
   // get spherical vector potential components.
-  Real ar = 0.0;
   Real atheta = 0.0;
   Real aphi = Bq*Rs*pow(r,-2)*sin(theta);
+  Real ar = sqrt(SQR(aphi));;
+
+  // Convert to Cartesian. 
+  Real ax = ar*sin(atheta)*cos(aphi);
+  Real ay = ar*sin(atheta)*sin(aphi);
+  Real az = ar*cos(atheta);
+
+  // Cartesian unit vectors 
+  // (see:https://en.wikipedia.org/wiki/Vector_fields_in_cylindrical_and_spherical_coordinates).
+  Real ap0 = ar*sin(theta)*cos(phi) + atheta*cos(theta)*cos(phi) - aphi*sin(phi);
+  Real ap1 = ar*sin(theta)*sin(phi) + atheta*cos(theta)*sin(phi) + aphi*cos(phi);
+  Real ap2 = ar*cos(theta) - atheta*sin(theta);
 
   // transform vector potential back to Cartesian coordinates.
-  Ap[0] = ar*sin(theta)*cos(phi) + atheta*cos(theta)*cos(phi) - aphi*sin(phi);
-  Ap[1] = ar*sin(theta)*sin(phi) + atheta*cos(theta)*sin(phi) + aphi*cos(phi);
-  Ap[2] = ar*cos(theta) - atheta*sin(theta);
+  Ap[0] = ax*ap0;
+  Ap[1] = ay*ap1;
+  Ap[2] = az*ap2;
 
   return; 
 }
