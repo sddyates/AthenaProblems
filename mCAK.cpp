@@ -227,55 +227,58 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
         a2(k,j,i) = Ap[1];
         a3(k,j,i) = Ap[2];
       }
-      std::cout << "Ap[0] = " << Ap[0] << "\n";
-      std::cout << "Ap[1] = " << Ap[1] << "\n";
-      std::cout << "Ap[2] = " << Ap[2] << "\n";
+      //std::cout << "Ap[0] = " << Ap[0] << "\n";
+      //std::cout << "Ap[1] = " << Ap[1] << "\n";
+      //std::cout << "Ap[2] = " << Ap[2] << "\n";
 
     }
 
   }}}
 
-  // initialize interface B
-  for (int k=ks; k<=ke; k++) {
-  for (int j=js; j<=je; j++) {
-  for (int i=is; i<=ie+1; i++) {
-/*    std::cout << "kji = " << i << j << k << "\n";
-    std::cout << "a1(k,j,i) = " << a1(k,j,i) << "\n";
-    std::cout << "a2(k,j,i) = " << a2(k,j,i) << "\n";
-    std::cout << "a3(k,j,i) = " << a3(k,j,i) << "\n";
-    std::cout << "pcoord->dx2f(j) = " << pcoord->dx2f(j) << "\n";
-    std::cout << "pcoord->dx3f(k) = " << pcoord->dx3f(k) << "\n";
-    std::cout << "pfield->b.x1f(k,j,i) = " << pfield->b.x1f(k,j,i) << "\n";*/
-    pfield->b.x1f(k,j,i) = (a3(k,j+1,i) - a3(k,j,i))/pcoord->dx2f(j) -
-                        (a2(k+1,j,i) - a2(k,j,i))/pcoord->dx3f(k);
-  }}}
-  for (int k=ks; k<=ke; k++) {
-  for (int j=js; j<=je+1; j++) {
-  for (int i=is; i<=ie; i++) {
-    pfield->b.x2f(k,j,i) = (a1(k+1,j,i) - a1(k,j,i))/pcoord->dx3f(k) -
-                        (a3(k,j,i+1) - a3(k,j,i))/pcoord->dx1f(i);
-  }}}
-  for (int k=ks; k<=ke+1; k++) {
-  for (int j=js; j<=je; j++) {
-  for (int i=is; i<=ie; i++) {
-    pfield->b.x3f(k,j,i) = (a2(k,j,i+1) - a2(k,j,i))/pcoord->dx1f(i) -
-                        (a1(k,j+1,i) - a1(k,j,i))/pcoord->dx2f(j);
-  }}}
+  if (MAGNETIC_FIELDS_ENABLED){ 
 
-  // initialize total energy
-  if (NON_BAROTROPIC_EOS) {
+    // initialize interface B
     for (int k=ks; k<=ke; k++) {
     for (int j=js; j<=je; j++) {
-      for (int i=is; i<=ie; i++) {
-        std::cout << "pfield->b.x1f(k,j,i) = " << pfield->b.x1f(k,j,i) << "\n";
-        std::cout << "pfield->b.x2f(k,j,i) = " << pfield->b.x2f(k,j,i) << "\n";
-        std::cout << "pfield->b.x3f(k,j,i) = " << pfield->b.x3f(k,j,i) << "\n";
-          phydro->u(IEN,k,j,i) +=
-          0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
-               SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
-               SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));
-      }
-    }}
+    for (int i=is; i<=ie+1; i++) {
+  /*    std::cout << "kji = " << i << j << k << "\n";
+      std::cout << "a1(k,j,i) = " << a1(k,j,i) << "\n";
+      std::cout << "a2(k,j,i) = " << a2(k,j,i) << "\n";
+      std::cout << "a3(k,j,i) = " << a3(k,j,i) << "\n";
+      std::cout << "pcoord->dx2f(j) = " << pcoord->dx2f(j) << "\n";
+      std::cout << "pcoord->dx3f(k) = " << pcoord->dx3f(k) << "\n";
+      std::cout << "pfield->b.x1f(k,j,i) = " << pfield->b.x1f(k,j,i) << "\n";*/
+      pfield->b.x1f(k,j,i) = (a3(k,j+1,i) - a3(k,j,i))/pcoord->dx2f(j) -
+                        (a2(k+1,j,i) - a2(k,j,i))/pcoord->dx3f(k);
+    }}}
+    for (int k=ks; k<=ke; k++) {
+    for (int j=js; j<=je+1; j++) {
+    for (int i=is; i<=ie; i++) {
+      pfield->b.x2f(k,j,i) = (a1(k+1,j,i) - a1(k,j,i))/pcoord->dx3f(k) -
+                          (a3(k,j,i+1) - a3(k,j,i))/pcoord->dx1f(i);
+    }}}
+    for (int k=ks; k<=ke+1; k++) {
+    for (int j=js; j<=je; j++) {
+    for (int i=is; i<=ie; i++) {
+      pfield->b.x3f(k,j,i) = (a2(k,j,i+1) - a2(k,j,i))/pcoord->dx1f(i) -
+                          (a1(k,j+1,i) - a1(k,j,i))/pcoord->dx2f(j);
+    }}}
+
+    // initialize total energy
+    if (NON_BAROTROPIC_EOS) {
+      for (int k=ks; k<=ke; k++) {
+      for (int j=js; j<=je; j++) {
+        for (int i=is; i<=ie; i++) {
+          //std::cout << "pfield->b.x1f(k,j,i) = " << pfield->b.x1f(k,j,i) << "\n";
+          //std::cout << "pfield->b.x2f(k,j,i) = " << pfield->b.x2f(k,j,i) << "\n";
+          //std::cout << "pfield->b.x3f(k,j,i) = " << pfield->b.x3f(k,j,i) << "\n";
+            phydro->u(IEN,k,j,i) +=
+            0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
+                 SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
+                 SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i))));
+        }
+      }}
+    }
   }
 
   return;
@@ -924,47 +927,75 @@ Real dveldr(Real *x, Real *fn)
 Real TwoDimensionalInterp(MeshBlock *pmb, int &i, int &j, int &k, Real &x, Real &y, 
                             Real &r, Real &ddr, const AthenaArray<Real> &prim)
 {
-/*
-       _____________________________
-  j+1 |              |              | 
-      |              |              |
-      |              |     *        |
-      |              |              |
-      |              |              |
-    j |______________|______________|
-      |              |              | 
-      |              |              |
-      |              |              |
-      |              |              |
-      |              |              |
-  j-1 |______________|______________|
-
-     i - 1          i            i + 1
-
-
-  yb 3               4
-      |```|`````````|
-      |   |         |
-   yI |___|_________|
-      |   |         |
-      |   |         |
-      |___|_________|
-  ya 1    xI         2
-      xa            xb
-*/
+  /*
+   *       _____________________________
+   *  j+1 |              |              | 
+   *      |              |              |
+   *      |              |     *        |
+   *      |              |              |
+   *      |              |              |
+   *    j |______________|______________|
+   *      |              |              | 
+   *      |              |              |
+   *      |              |              |
+   *      |              |              |
+   *      |              |              |
+   *  j-1 |______________|______________|
+   *  
+   *    i - 1          i            i + 1
+   *  
+   *  
+   *  yb 3               4
+   *      |```|`````````|
+   *      |   |         |
+   *   yI |___|_________|
+   *      |   |         |
+   *      |   |         |
+   *      |___|_________|
+   *  ya 1    xI         2
+   *      xa            xb
+   *
+   * The interpolation points are always between xa, xb and ya, yb.
+   *       
+   * ddr is the distance forwards (backwards) from the point 
+   * that the velocity gradient is needed to give the place 
+   * to perform the interpolation.
+   *
+   *  r -> r±ddr
+   *
+   * |'''''''''''''''''''''''''|
+   * |                         |
+   * |                         |
+   * |      * r+ddr            |
+   * |     /|                  |
+   * |    / |                  |
+   * |   /  | r+ddr*cos(theta) |
+   * |  /   |                  |
+   * | /    |                  |
+   * |/_____|__________________|
+   * r     r+ddr*sin(theta)
+   *
+   * xI and yI are the interpolation componets. 
+   * 
+   */
 
   int u, s;
-  Real Ntot;
-  Real vrI;
-  Real vI[2];
-  Real N[4];
-  Real V[2][4];
-  Real xa, xb;
-  Real ya, yb;
-  Real theta = atan2(x,y);
+  Real Ntot; // total volume of interpolation "space".
+  Real vrI; // final interpolated radial-velocity. 
+  Real vI[2]; // interpolated velocity components.
+  Real N[4]; // Areas used to waight nearest neighbours (NN).
+  Real V[2][4]; // Array to hold velocity componants at NN.
+  Real xa, xb; // bracketing x values.
+  Real ya, yb; // bracketing y values.
+  Real theta = atan2(x,y); // convert to polar from Cartesian.
   Real xI = (r+ddr)*sin(theta);
   Real yI = (r+ddr)*cos(theta);
 
+  /*
+   * Eath of the following if statments checks which quadrent 
+   * the interpolation point is in and gets the components 
+   * of the velocity and the bracketing x and y values.
+   */
   if (xI > x && yI > y){
     xa = pmb->pcoord->x1v(i); xb = pmb->pcoord->x1v(i+1);
     ya = pmb->pcoord->x2v(j); yb = pmb->pcoord->x2v(j+1);
